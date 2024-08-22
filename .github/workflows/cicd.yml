@@ -1,0 +1,168 @@
+name: Python application
+
+on:
+  workflow_call:
+    inputs:
+      python-version:
+        description: 'Python version to set up'
+        required: true
+        type: string
+      requirements-path:
+        description: 'Path to the requirements.txt file'
+        required: true
+        type: string
+      test-path:
+        description: 'Path to the test file or directory'
+        required: true
+        type: string
+
+    secrets:
+      SNYK_TOKEN:
+        description: 'Snyk token for vulnerability scanning'
+        required: true
+      AWS_ACCESS_KEY:
+        description: 'AWS access key ID'
+        required: true
+      AWS_SECRET_KEY:
+        description: 'AWS secret access key'
+        required: true
+      EC2_HOST:
+        description: 'EC2 host for SSH deployment'
+        required: true
+      EC2_SSH_KEY:
+        description: 'SSH private key for EC2'
+        required: true
+      EC2_USERNAME:
+        description: 'EC2 username'
+        required: true
+      SONAR_TOKEN:
+        description: 'sonar token for authentication'
+        required: true
+      SONAR_HOST_URL:
+        description: 'sonarqube URL endpoint'
+        required: true
+
+jobs:
+# Lint test Stages
+  lint_test:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v3
+      with:
+        python-version: ${{ inputs.python-version }}
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r ${{ inputs.requirements-path }}
+    
+    - name: Lint with flake8
+      run: |
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistic
+
+# Test Stage
+  py_test:
+    runs-on: ubuntu-latest
+    needs: lint_test
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v3
+      with:
+        python-version: ${{ inputs.python-version }}
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r ${{ inputs.requirements-path }}
+
+    - name: Test with pytest
+      run: |
+        export PYTHONPATH=src
+        pytest ${{ inputs.test-path }}
+
+
+# Security source code Scan Stage
+  Snyk_scan:
+    runs-on: ubuntu-latest
+    needs: [lint_test, py_test]
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Run Snyk to check for vulnerabilities
+      uses: snyk/actions/python@master
+      env:
+        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      with:
+        command: code test
+
+
+#Sonarqube Scan Stage
+  Sonar_scan:
+    runs-on: ubuntu-latest
+    needs: [lint_test,  py_test, Snyk_scan ]
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Install jq
+      run: sudo apt-get update && sudo apt-get install -y jq
+
+    - name: curl to server endpoint
+      run: curl ${{ secrets.SONAR_HOST_URL }}
+
+    - name: SonarQube Scan
+      uses: SonarSource/sonarqube-scan-action@v2.0.2
+      env:
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
+    - name: SonarQube Quality Gate check
+      id: sonarqube-quality-gate-check
+      uses: sonarsource/sonarqube-quality-gate-action@master
+      timeout-minutes: 5
+      env:
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
+#Sonarqube Scan Stage
+  deploy:     
+    runs-on: ubuntu-latest
+    needs: Sonar_scan
+    steps:   
+    - name: Set up SSH key 
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+  
+    - name: Verify SSH Connection 
+      run: |
+        ssh -i ~/.ssh/id_rsa ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }} "ls /home/${{ secrets.EC2_USERNAME }}"
+    
+    - name: Copy files to remote server 
+      env:
+        EC2_HOST: ${{ secrets.EC2_HOST }}
+        EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
+      run: |
+        scp -r * $EC2_USERNAME@$EC2_HOST:/home/ubuntu/
+
+    - name: Run Bash Script To Delpoy App 
+      env:
+        EC2_HOST: ${{ secrets.EC2_HOST }}
+        EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
+      run: |
+        ssh -o StrictHostKeyChecking=no $EC2_USERNAME@$EC2_HOST "chmod +x ./deploy.sh && ./deploy.sh"
+        
+
+
+    
