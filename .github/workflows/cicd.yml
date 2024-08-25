@@ -141,15 +141,7 @@ jobs:
 
     - name: Checkout repository
       uses: actions/checkout@v4
-      
-    - name: Create .env file dynamically 
-      env:
-        ENV: ${{ secrets.ENV }}
-        EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
-      run: |
-        echo "ENV=${ENV}" >> env
-        echo "EC2_USERNAME=${EC2_USERNAME}" >> env
-        
+
     - name: Set up SSH key 
       run: |
         mkdir -p ~/.ssh
