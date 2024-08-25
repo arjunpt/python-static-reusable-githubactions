@@ -9,10 +9,6 @@ sudo mkdir -p /var/www/app
 echo "moving files to app folder"
 sudo mv  * /var/www/app 
 
-# Navigate to the app directory
-cd /var/www/app /src
-sudo mv env .env
-
 sudo apt-get update
 echo "installing python and pip"
 sudo apt-get install -y python3 python3-pip
