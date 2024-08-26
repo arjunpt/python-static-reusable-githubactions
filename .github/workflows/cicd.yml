@@ -83,10 +83,16 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r ${{ inputs.requirements-path }}
 
-    - name: Test with pytest
+    - name: Test with pytest and generate coverage report
       run: |
         export PYTHONPATH=src
-        pytest ${{ inputs.test-path }}
+        pytest --cov=src --cov-report=xml --cov-report=html:coverage_report src/test/test.py
+
+    - name: Upload coverage report
+      uses: actions/upload-artifact@v3
+      with:
+        name: coverage-report
+        path: coverage_report
 
 
 # Security source code Scan Stage
@@ -103,6 +109,13 @@ jobs:
         SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
       with:
         command: code test
+        args: --file=src --sarif-file-output=snyk-python.sarif
+
+    - name: Upload Snyk Python report
+      uses: actions/upload-artifact@v3
+      with:
+        name: snyk-python-report
+        path: snyk-python.sarif
 
 
 #Sonarqube Scan Stage
