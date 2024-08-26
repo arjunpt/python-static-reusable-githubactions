@@ -15,6 +15,10 @@ on:
         description: 'Path to the test file or directory'
         required: true
         type: string
+      source-path:
+        description: 'Path to the source file or directory'
+        required: true
+        type: string
 
     secrets:
       SNYK_TOKEN:
@@ -86,7 +90,7 @@ jobs:
     - name: Test with pytest and generate coverage report
       run: |
         export PYTHONPATH=src
-        pytest --cov=src --cov-report=xml --cov-report=html:coverage_report src/test/test.py
+        pytest --cov=src --cov-report=xml --cov-report=html:coverage_report ${{ inputs.test-path }}
 
     - name: Upload coverage report
       uses: actions/upload-artifact@v3
@@ -109,7 +113,7 @@ jobs:
         SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
       with:
         command: code test
-        args: --file=src --sarif-file-output=snyk-python.sarif
+        args: --file=${{ inputs.source-path }} --sarif-file-output=snyk-python.sarif
 
     - name: Upload Snyk Python report
       uses: actions/upload-artifact@v3
