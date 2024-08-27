@@ -1,31 +1,52 @@
 #!/bin/bash
 
-echo "deleting old app"
-sudo rm -rf /var/www/
+# Variables
+APP_DIR="/var/www/app"
+SRC_DIR="$APP_DIR/src"
+VENV_DIR="$APP_DIR/venv"
 
-echo "creating app folder"
-sudo mkdir -p /var/www/app 
+# Check for existing application and remove if necessary
+if [ -d "$APP_DIR" ]; then
+    echo "Deleting old app"
+    sudo rm -rf "$APP_DIR"
+fi
 
-echo "moving files to app folder"
-sudo mv  * /var/www/app 
+echo "Creating app folder"
+sudo mkdir -p "$APP_DIR"
 
+echo "Moving files to app folder"
+sudo mv * "$APP_DIR"
+
+# Update package list and install Python and Pip
+echo "Updating package list"
 sudo apt-get update
-echo "installing python and pip"
-sudo apt-get install -y python3 python3-pip
+
+echo "Installing Python and Pip"
+sudo apt-get install -y python3 python3-venv
+
+# Create a virtual environment with sudo permissions
+echo "Creating virtual environment"
+sudo python3 -m venv "$VENV_DIR"
+
+# Adjust permissions of the virtual environment directory
+sudo chown -R $USER:$USER "$VENV_DIR"
+
+# Activate the virtual environment
+echo "Activating virtual environment"
+source "$VENV_DIR/bin/activate"
 
 # Install application dependencies from requirements.txt
-echo "Install application dependencies from requirements.txt"
-sudo pip install -r requirements.txt
+echo "Installing application dependencies from requirements.txt"
+pip install -r "$APP_DIR/requirements.txt"
 
-# Update and install Nginx if not already installed
+# Install and configure Nginx
 if ! command -v nginx > /dev/null; then
     echo "Installing Nginx"
-    sudo apt-get update
     sudo apt-get install -y nginx
 fi
 
-# Configure Nginx to act as a reverse proxy if not already configured
 if [ ! -f /etc/nginx/sites-available/myapp ]; then
+    echo "Configuring Nginx"
     sudo rm -f /etc/nginx/sites-enabled/default
     sudo bash -c 'cat > /etc/nginx/sites-available/myapp <<EOF
 server {
@@ -38,30 +59,23 @@ server {
     }
 }
 EOF'
-
     sudo ln -s /etc/nginx/sites-available/myapp /etc/nginx/sites-enabled
     sudo systemctl restart nginx
 else
     echo "Nginx reverse proxy configuration already exists."
 fi
 
+# Install and start Gunicorn
+echo "Installing Gunicorn"
+pip install gunicorn
 
-# # Start Gunicorn with the Flask application
-# # Replace 'server:app' with 'yourfile:app' if your Flask instance is named differently.
-# # gunicorn --workers 3 --bind 0.0.0.0:8000 server:app &
-# echo "starting gunicorn"
-# apt-get install python3-venv
-# cd /var/www/app/src
-# python3 -m venv venv
-# source venv/bin/activate
-# pip install gunicorn
-# pip install flask
-# gunicorn --workers 3 --bind unix:/var/www/app/src/myapp.sock app:app
-# sudo gunicorn --workers 3 --bind unix:myapp.sock  server:app --user www-data --group www-data --daemon
+# Run Gunicorn in the background
+echo "Starting Gunicorn"
+cd "$SRC_DIR"
+nohup "$VENV_DIR/bin/gunicorn" --workers 3 --bind unix:/var/www/app/src/myapp.sock app:app > gunicorn.log 2>&1 &
 
-echo "started gunicorn 🚀"
-sudo apt-get update
-sudo apt-get install python3-pip -y
-sudo apt install python3-flask -y
-sudo apt install gunicorn -y
-gunicorn --workers 3 --bind unix:/var/www/app/src/myapp.sock app:app
+# Check if Gunicorn started successfully
+sleep 5  # Give it some time to start
+pgrep -af gunicorn
+
+echo "Deployment complete. Gunicorn is running and Nginx is configured."
